@@ -1,0 +1,12 @@
+# One phrase per line. Lower-case letters and spaces work best for Morse trials.
+# For a published study, consider the MacKenzie & Soukoreff (2003) phrase set.
+hello world
+see you soon
+i need water
+please call my family
+the weather is nice today
+thank you very much
+turn on the lights
+what time is it
+i am feeling good
+open the window

@@ -1,0 +1,6 @@
+mediapipe>=0.10.14
+opencv-python>=4.8
+numpy>=1.24
+pyautogui>=0.9.54
+# Optional: lets a physical switch/key act as a second Morse input (--switch-key)
+pynput>=1.7
