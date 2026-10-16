@@ -250,6 +250,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--trial", metavar="PHRASES", help="run a text-entry experiment with this phrase file")
     p.add_argument("--trial-send", action="store_true", help="also type trial text into the OS")
     p.add_argument("--no-shuffle", action="store_true", help="keep trial phrases in file order")
+    p.add_argument("--pointing", type=int, metavar="N", help="run a pointing task with N targets")
+    p.add_argument("--target-radius", type=int, default=40, help="pointing target radius in px (default 40)")
+    p.add_argument("--pointing-timeout", type=float, default=15.0, help="seconds before a target counts as missed")
+    p.add_argument("--pointing-seed", type=int, help="random seed, so every participant gets the same targets")
     for f in fields(Config):
         flag = "--" + f.name.replace("_", "-")
         if isinstance(f.default, bool):
@@ -284,8 +288,11 @@ def main(argv=None) -> None:
     from .calibration import Aborted, load_calibration, run_calibration, save_calibration
     from .logger import SessionLogger
     from .tracker import FaceTracker
+    from .pointing import PointingTask, PointingWindow
     from .trial import TrialSession
 
+    if args.trial and args.pointing:
+        raise SystemExit("Run --trial and --pointing as separate sessions.")
     trial = TrialSession.from_file(args.trial, shuffle=not args.no_shuffle) if args.trial else None
     controller = make_controller(cfg.dry_run or (trial is not None and not args.trial_send))
     screen_w, screen_h = controller.screen_size()
@@ -319,12 +326,26 @@ def main(argv=None) -> None:
         app.apply_calibration(calib)
         logger.write_json("calibration.json", calib)
 
+    pointing = pointing_win = None
+    if args.pointing:
+        if app.mapper is None:
+            raise SystemExit("The pointing task needs a gaze calibration.")
+        if controller.__class__ is Controller:
+            print("[warn] Dry-run mode sends no real clicks, so no target can be hit.")
+        pointing = PointingTask(args.pointing, args.target_radius, screen_w, screen_h,
+                                args.pointing_timeout, args.pointing_seed)
+        pointing_win = PointingWindow(pointing)
+        logger.write_json("pointing_setup.json", {
+            "targets": args.pointing, "radius_px": args.target_radius,
+            "timeout_s": args.pointing_timeout, "seed": args.pointing_seed, "screen": [screen_w, screen_h]})
+
     win = "EyeMorse"
-    cv2.namedWindow(win, cv2.WINDOW_AUTOSIZE)
-    try:
-        cv2.setWindowProperty(win, cv2.WND_PROP_TOPMOST, 1)
-    except cv2.error:
-        pass
+    if not pointing:  # the full-screen task replaces the preview window
+        cv2.namedWindow(win, cv2.WINDOW_AUTOSIZE)
+        try:
+            cv2.setWindowProperty(win, cv2.WND_PROP_TOPMOST, 1)
+        except cv2.error:
+            pass
 
     fps, last_t, show_help = 0.0, time.monotonic(), False
     session_start = last_t
@@ -364,7 +385,16 @@ def main(argv=None) -> None:
             if trial:
                 state.update(trial_target=trial.target if not trial.done else "(all trials done - press q)",
                              trial_typed=trial.typed, trial_no=f"{trial.index + 1}/{len(trial.phrases)}")
-            cv2.imshow(win, ui.render(frame, face, state))
+            if pointing_win:
+                status = f"{app.display_mode}   Morse: {app.decoder.buffer or '-'}   {state['pending_label']}"
+                if face is None:
+                    status += "   NO FACE"
+                for r in pointing_win.step(t, status):
+                    logger.event(t, "pointing", int(r["hit"]), r)
+                    print(f"Target {r['target']}: {'hit' if r['hit'] else 'timed out'} in "
+                          f"{r['movement_time_s']:.2f} s, {r['misses']} missed clicks")
+            else:
+                cv2.imshow(win, ui.render(frame, face, state))
 
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
@@ -377,7 +407,7 @@ def main(argv=None) -> None:
                 app.toggle_pause(t)
             elif key == ord("f"):
                 app.frozen = not app.frozen
-            elif key == ord("c"):
+            elif key == ord("c") and not pointing:
                 data = calibrate()
                 if data:
                     app.apply_calibration(data)
@@ -388,6 +418,9 @@ def main(argv=None) -> None:
         if trial:
             summary["trial_summary"] = trial.summary()
             logger.write_json("trials.json", trial.results)
+        if pointing:
+            summary["pointing_summary"] = pointing.summary()
+            logger.write_json("pointing.json", pointing.results)
         logger.write_json("summary.json", summary)
         logger.close()
         if switch:

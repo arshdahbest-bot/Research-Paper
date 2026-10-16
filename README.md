@@ -169,6 +169,30 @@ Add `--screen-width-cm 34.5 --viewing-distance-cm 60` (measure your own) to
 report calibration error in **degrees of visual angle**. This is the usual unit
 in gaze-tracking papers.
 
+### Pointing task
+```bash
+python -m eyemorse --pointing 10 --pointing-seed 1
+```
+A full-screen window shows 10 red targets, one at a time, at random positions.
+The participant looks at each target and blinks a dash (`-`) to click it. After
+a 3-second countdown, each target stays until it is hit, or until it times out
+after 15 s. Use the same `--pointing-seed` for everyone so all participants get
+the same targets. `--target-radius` sets the target size (default 40 px).
+
+`pointing.json` records, for each target:
+
+| Field | Meaning |
+|---|---|
+| `movement_time_s` | time from the target appearing to the hit |
+| `first_click_hit` | hit with the first click, no misses |
+| `misses` | clicks that landed outside the target |
+| `click_error_px` | distance of the hitting click from the target centre |
+| `fitts_id_bits` | Fitts' index of difficulty, log2(D / W + 1) |
+| `throughput_bps` | ID / movement time, in bits per second |
+
+`summary.json` adds the hit rate, the first-click hit rate, the mean movement
+time and the mean throughput. Press `q` when the task says it is complete.
+
 ### Experiment ideas (independent variables)
 * Input channel: `--input-mode both` vs `wink-left` vs `--switch-key` (switch as baseline)
 * Fixed vs adaptive timing: `--adaptive-timing`
